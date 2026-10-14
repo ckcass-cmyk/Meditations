@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Meditations by length</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#e9eeec;--ink:#1f2d2b;--mute:#5d706c;--acc:#1f6f6b;--card:#f5f8f7;--line:#cbd8d4;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121a19;--ink:#e4eeeb;--mute:#93a8a3;--acc:#6fc2b8;--card:#1a2523;--line:#2b3a37}}
+:root[data-theme="dark"]{--bg:#121a19;--ink:#e4eeeb;--mute:#93a8a3;--acc:#6fc2b8;--card:#1a2523;--line:#2b3a37}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,sans-serif;padding-bottom:150px}
+header,main{max-width:680px;margin:0 auto;padding:0 16px}
+h1{font:600 28px/1.2 Newsreader,Georgia,serif;margin:20px 0 4px}
+.sub{color:var(--mute);margin:0 0 14px;font-size:14px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.bar button,.bar input,.bar select{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:8px 14px}
+.bar button[aria-pressed="true"]{background:var(--acc);color:var(--bg);border-color:var(--acc)}
+.bar input{flex:1;min-width:140px;border-radius:10px}
+button:focus-visible,input:focus-visible,select:focus-visible,li:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;gap:12px;align-items:center;padding:12px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+li[aria-current="true"]{background:var(--card);box-shadow:inset 3px 0 0 var(--acc);padding-left:12px}
+.dur{flex:none;width:64px;font:600 18px Newsreader,Georgia,serif;color:var(--acc);font-variant-numeric:tabular-nums}
+.t{font-weight:500;overflow-wrap:anywhere}
+.d{color:var(--mute);font-size:13px}
+#msg{color:var(--mute);padding:20px 0}
+footer{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}
+footer div{max-width:680px;margin:0 auto}
+#now{font-size:14px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+audio{width:100%}
+</style>
+</head>
+<body>
+<header>
+<h1>Meditations by length</h1>
+<p class="sub" id="count">Loading…</p>
+<div class="bar" role="group" aria-label="Sort">
+<button data-s="asc" aria-pressed="true">Shortest</button>
+<button data-s="desc" aria-pressed="false">Longest</button>
+<button data-s="new" aria-pressed="false">Newest</button>
+<button id="med" aria-pressed="false">Guided meditations only</button>
+<select id="src" aria-label="Teacher"><option value="">All teachers</option></select>
+<input id="q" type="search" placeholder="Search titles" aria-label="Search titles">
+</div>
+</header>
+<main><div id="msg"></div><ul id="list"></ul></main>
+<footer><div><div id="now">Pick a meditation to play</div><audio id="au" controls preload="none"></audio></div></footer>
+<script>
+// To add another feed later, add one more line here.
+// snap = optional saved copy of the feed in this repo (makes the page load fast and work on phones).
+var FEEDS=[
+  {name:"Jack Kornfield",url:"https://dharmaseed.org/feeds/teacher/85/",snap:"feed.xml",strip:/^Jack Kornfield:\s*/},
+  {name:"Tara Brach",url:"https://rss.libsyn.com/shows/43741/destinations/138667.xml",snap:"tarabrach.xml"}
+];
+var items=[],byFeed={},sort="asc",medOnly=false,srcSel="",shown=[];
+var $=function(i){return document.getElementById(i)};
+function secs(s){var p=(s||"").split(":").map(Number);if(p.some(isNaN))return 0;return p.reduce(function(a,b){return a*60+b},0)}
+function fmt(n){var h=Math.floor(n/3600),m=Math.floor(n%3600/60),s=n%60;
+return h?h+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0"):m+":"+String(s).padStart(2,"0")}
+function get(u){return fetch(u).then(function(r){if(!r.ok)throw 0;return r.text()})}
+function fetchLive(url){
+var tries=[url,"https://api.allorigins.win/raw?url="+encodeURIComponent(url),"https://corsproxy.io/?"+encodeURIComponent(url)];
+return tries.reduce(function(p,u){return p.catch(function(){return get(u)})},Promise.reject());
+}
+function parse(x,f){
+var d=new DOMParser().parseFromString(x,"text/xml");
+return Array.prototype.map.call(d.querySelectorAll("item"),function(it){
+var g=function(t){var e=it.getElementsByTagName(t)[0];return e?e.textContent:""};
+var en=it.getElementsByTagName("enclosure")[0];
+var t=g("title").trim();if(f.strip)t=t.replace(f.strip,"");
+return{title:t,date:new Date(g("pubDate")),dur:secs(g("itunes:duration")),url:en?en.getAttribute("url"):"",src:f.name};
+}).filter(function(i){return i.url&&i.dur});
+}
+function isMed(t){return(/meditation|\(\d+(:\d+)?\s*min/i.test(t))&&!/talk/i.test(t)}
+function render(){
+var q=$("q").value.toLowerCase();
+shown=items.filter(function(i){return(!srcSel||i.src===srcSel)&&(!medOnly||isMed(i.title))&&i.title.toLowerCase().indexOf(q)>-1});
+shown.sort(function(a,b){return sort=="asc"?a.dur-b.dur:sort=="desc"?b.dur-a.dur:b.date-a.date});
+$("count").textContent=shown.length+" of "+items.length+" recordings";
+$("list").innerHTML="";
+shown.forEach(function(i,n){
+var li=document.createElement("li");li.tabIndex=0;
+if(i.url===$("au").dataset.u)li.setAttribute("aria-current","true");
+li.innerHTML='<span class="dur"></span><span><div class="t"></div><div class="d"></div></span>';
+li.querySelector(".dur").textContent=fmt(i.dur);
+li.querySelector(".t").textContent=i.title;
+li.querySelector(".d").textContent=i.src+" · "+i.date.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"});
+var go=function(){play(n)};li.onclick=go;
+li.onkeydown=function(e){if(e.key=="Enter"||e.key==" "){e.preventDefault();go()}};
+$("list").appendChild(li);
+});
+}
+function play(n){
+var i=shown[n];if(!i)return;
+var a=$("au");a.dataset.u=i.url;a.src=i.url;a.play().catch(function(){});
+$("now").textContent=i.title;
+Array.prototype.forEach.call($("list").children,function(li,k){k==n?li.setAttribute("aria-current","true"):li.removeAttribute("aria-current")});
+if("mediaSession" in navigator){navigator.mediaSession.metadata=new MediaMetadata({title:i.title,artist:i.src})}
+}
+$("au").onended=function(){
+var u=$("au").dataset.u,k=-1;
+shown.forEach(function(i,n){if(i.url===u)k=n});
+if(k>-1)play(k+1);
+};
+document.querySelectorAll("[data-s]").forEach(function(b){b.onclick=function(){
+sort=b.dataset.s;document.querySelectorAll("[data-s]").forEach(function(x){x.setAttribute("aria-pressed",x===b)});render()}});
+$("med").onclick=function(){medOnly=!medOnly;this.setAttribute("aria-pressed",medOnly);render()};
+$("q").oninput=render;
+FEEDS.forEach(function(f){var o=document.createElement("option");o.value=f.name;o.textContent=f.name;$("src").appendChild(o)});
+$("src").onchange=function(){srcSel=this.value;render()};
+function rebuild(){items=[].concat.apply([],FEEDS.map(function(f){return byFeed[f.name]||[]}));render()}
+function loadFeed(f){
+var live=false;
+var apply=function(x,isLive){
+var p=parse(x,f);if(!p.length)throw 0;
+if(!isLive&&live)return;
+if(isLive)live=true;
+byFeed[f.name]=p;rebuild();
+};
+var a=get(f.snap).then(function(x){apply(x,false)}).catch(function(){});
+var b=fetchLive(f.url).then(function(x){apply(x,true)}).catch(function(){});
+return Promise.all([a,b]);
+}
+Promise.all(FEEDS.map(loadFeed)).then(function(){
+var miss=FEEDS.filter(function(f){return!byFeed[f.name]}).map(function(f){return f.name});
+if(!miss.length)return;
+if(items.length){$("msg").textContent="Couldn't load: "+miss.join(", ")+"."}
+else{$("count").textContent="";$("msg").textContent="Couldn't load the feed. Check your connection and reload."}
+});
+</script>
+</body>
+</html>
