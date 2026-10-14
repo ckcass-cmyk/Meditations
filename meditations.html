@@ -98,9 +98,12 @@ document.querySelectorAll("[data-s]").forEach(function(b){b.onclick=function(){
 sort=b.dataset.s;document.querySelectorAll("[data-s]").forEach(function(x){x.setAttribute("aria-pressed",x===b)});render()}});
 $("med").onclick=function(){medOnly=!medOnly;this.setAttribute("aria-pressed",medOnly);render()};
 $("q").oninput=render;
-load().then(function(x){items=parse(x);if(!items.length)throw 0;render()}).catch(function(){
-$("count").textContent="";
-$("msg").textContent="Couldn't load the feed. Check your connection and reload.";
+function show(x){items=parse(x);if(!items.length)throw 0;render()}
+get("feed.xml").then(show).catch(function(){});
+load().then(show).catch(function(){
+  if(items.length)return;
+  $("count").textContent="";
+  $("msg").textContent="Couldn't load the feed. Check your connection and reload.";
 });
 </script>
 </body>
