@@ -54,8 +54,10 @@ audio{width:100%}
 // snap = optional saved copy of the feed in this repo (makes the page load fast and work on phones).
 var FEEDS=[
   {name:"Jack Kornfield",url:"https://dharmaseed.org/feeds/teacher/85/",snap:"feed.xml",strip:/^Jack Kornfield:\s*/},
-  {name:"Tara Brach",url:"https://rss.libsyn.com/shows/43741/destinations/138667.xml",snap:"tarabrach.xml"}
+  {name:"Tara Brach",url:"https://rss.libsyn.com/shows/43741/destinations/138667.xml",snap:"tarabrach.xml"},
+  {name:"Jack Kornfield (Heart Wisdom)",url:"https://rss.art19.com/heart-wisdom-with-jack-kornfield",snap:"heartwisdom.xml"}
 ];
+// If the same title appears in more than one feed, the feed listed first above is the one that's kept.
 var items=[],byFeed={},sort="asc",medOnly=false,srcSel="",shown=[];
 var $=function(i){return document.getElementById(i)};
 function secs(s){var p=(s||"").split(":").map(Number);if(p.some(isNaN))return 0;return p.reduce(function(a,b){return a*60+b},0)}
@@ -112,7 +114,16 @@ $("med").onclick=function(){medOnly=!medOnly;this.setAttribute("aria-pressed",me
 $("q").oninput=render;
 FEEDS.forEach(function(f){var o=document.createElement("option");o.value=f.name;o.textContent=f.name;$("src").appendChild(o)});
 $("src").onchange=function(){srcSel=this.value;render()};
-function rebuild(){items=[].concat.apply([],FEEDS.map(function(f){return byFeed[f.name]||[]}));render()}
+function key(t){return t.toLowerCase().replace(/^ep\.?\s*\d+\s*[–—-]\s*/,"").replace(/[^a-z0-9]+/g," ").trim()}
+function rebuild(){
+var seen={};
+items=[].concat.apply([],FEEDS.map(function(f){return byFeed[f.name]||[]})).filter(function(i){
+var k=key(i.title);if(!k)return true;
+if(seen[k])return false;
+seen[k]=1;return true;
+});
+render();
+}
 function loadFeed(f){
 var live=false;
 var apply=function(x,isLive){
